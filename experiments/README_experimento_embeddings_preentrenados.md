@@ -182,24 +182,104 @@ crudos.**
    cada fold.** Mejores insumos suben el techo (mejor Silhouette, mejor 2D
    in-sample), pero el problema de generalización del método persiste.
 
-## 6. Conclusión
+## 6. Barrido de hiperparámetros de EmbedKit sobre los embeddings
+
+El experimento original incluía un **barrido por descenso de coordenadas**
+(`embedkit_unsup_sweep_fashion_mnist.py`) que buscaba, sobre píxeles crudos,
+una configuración no supervisada de EmbedKit que superara a UMAP — y la
+encontraba (`FeatureMasking`, red más grande → **0.775 ± 0.016**, batía a UMAP
+y **curaba la inestabilidad**). Aquí se repite **el mismo barrido, con las
+mismas etapas**, pero alimentándolo con los embeddings preentrenados
+(`embedkit_unsup_sweep_embeddings.py`). Cada configuración se rankea por
+exactitud k-NN fuera de muestra en un holdout 75/25; los finalistas se
+re-evalúan con **5-fold × 3 semillas**.
+
+**Etapas del barrido** (holdout; referencia UMAP ≈ 0.787 a `dim=16`):
+
+| Etapa | Se explora | Ganador (embeddings) | OOS acc (holdout) | Ganador en píxeles |
+|---|---|---|---|---|
+| 1. `target_dim` | 8, 16, 32 | **16** | 0.796 | 32 |
+| 2. augmentation | KNNPairs(5/10/15/hn), Noise, Masking, Mixup, KNN+Noise | **KNNPairs(k=10)** | 0.807 | FeatureMasking |
+| 3. loss / temp. | NTXent(.05/.07/.2/.5), AlignUniform, Combined×2 | **NTXent(0.07)** | 0.800 | Combined |
+| 4. arquitectura | hidden, n_layers, lr, epochs | **base** (sin cambios) | 0.819 | h512/L3/lr1e-3 |
+
+(CSVs por etapa en `resultados_sweep_embeddings/etapa*.csv`)
+
+**La observación más importante del barrido: el mecanismo decisivo se invierte
+respecto a los píxeles.** En píxeles, `FeatureMasking` (enmascarar parches)
+ganaba y `KNNPairs` era la *augmentation* problemática; sobre embeddings es al
+revés — **`KNNPairs` es la mejor** (0.79–0.81) y **`FeatureMasking` cae a
+0.723**, entre las peores. Es coherente: en el espacio de embeddings los
+vecindarios son semánticamente significativos, así que fabricar positivos con
+vecinos (`KNNPairs`) es fiable; en cambio enmascarar *features aprendidas*
+destruye información, al contrario que enmascarar píxeles redundantes.
+`GaussianNoise` vuelve a ser de las peores (0.547) en ambas representaciones.
+
+**Finalistas (5-fold × 3 semillas, `target_dim=16`) — y el resultado clave:**
+
+| Config | OOS kNN acc (media ± std) | OOS Trustworthiness |
+|---|---|---|
+| **EmbedKit default** (KNNPairs(5), Combined, h256/L2) | **0.803 ± 0.015** | 0.974 |
+| EmbedKit **sweep-best** (KNNPairs(10), NTXent.07) | 0.619 ± 0.264 | 0.844 |
+| UMAP (dim=16) | 0.786 ± 0.016 | 0.958 |
+
+Comparado con el barrido sobre píxeles crudos:
+
+| Config | Píxeles (dim=32) | Embeddings (dim=16) |
+|---|---|---|
+| EmbedKit default | 0.611 ± 0.062 | **0.803 ± 0.015** |
+| EmbedKit sweep-best | **0.775 ± 0.016** | 0.619 ± 0.264 |
+| UMAP | 0.729 ± 0.020 | 0.786 ± 0.016 |
+
+(CSV: `resultados_sweep_embeddings/finalistas.csv`; figura:
+`resultados_sweep_embeddings/fig_finalistas.png`; config completa en
+`resultados_sweep_embeddings/resumen.json`)
+
+**Dos conclusiones, y son distintas a las del barrido sobre píxeles:**
+
+1. **Sobre embeddings ya no hace falta afinar: la configuración por defecto de
+   EmbedKit supera a UMAP y es estable** (0.803 ± 0.015 vs. 0.786 ± 0.016).
+   Sobre píxeles, la configuración por defecto era inestable (0.611 ± 0.062) y
+   había que *buscar* `FeatureMasking` para batir a UMAP; sobre embeddings, la
+   representación más rica ya hace ese trabajo — con la dimensión adecuada (16),
+   la EmbedKit **por defecto** es estable y ganadora. (Nótese que a `dim=3`, en
+   la Sección 5, esa misma EmbedKit self-sup colapsaba: la clave es
+   representación rica **+** dimensión suficiente.)
+
+2. **El barrido guiado por un solo holdout es contraproducente aquí.** La
+   "config ganadora" que eligió el descenso de coordenadas (KNNPairs(10) +
+   NTXent(.07), mejor por centésimas en el holdout, 0.807) **colapsa en la
+   evaluación robusta**: 0.619 ± 0.264 — peor y ~18× más inestable que la
+   propia config por defecto. Un cambio mínimo (k=5→10 y cambiar la loss) volvió
+   inestable una config estable. Esto revela dos cosas: (a) la selección por un
+   único holdout es ruidosa —agravada por la no-determinación de PyTorch en CPU,
+   que hace que hasta re-evaluar la *misma* config varíe entre 0.80 y 0.82—, y
+   (b) la estabilidad del refinador self-supervised sigue siendo **frágil** ante
+   la configuración, aunque su valor por defecto sea bueno. En resumen: sobre
+   esta representación, lo mejor es **no** correr el barrido.
+
+## 7. Conclusión
 
 Usar embeddings de una red preentrenada como entrada, en vez de píxeles crudos:
 
 - **Sube el techo de todos los métodos** en separación de clases (Silhouette),
   en kNN acc (sobre todo a 16D) y en la representación base (0.774 → 0.813).
-  UMAP es el mayor beneficiado y produce el mejor mapa 2D no supervisado.
+  UMAP es el mayor beneficiado en 2D y produce el mejor mapa no supervisado.
 - **Cambia la geometría**: los embeddings son menos anisotrópicos, lo que
   quita a PCA su ventaja en estructura global (correlación de distancias
   0.880 → 0.523 en 2D).
-- **No cambia la conclusión cualitativa del experimento anterior**: UMAP es el
-  reductor no supervisado estable y de mejor generalización; EmbedKit self-sup
-  mejora en 2D pero sigue colapsando fuera de muestra. La calidad de la
-  representación de entrada y la estabilidad del método de reducción son dos
-  ejes **independientes**: mejorar el primero (con embeddings) no arregla el
-  segundo.
+- **Estabiliza a EmbedKit a su dimensión cómoda (16):** lo que en píxeles exigía
+  afinar la *augmentation* (Sección 6), en embeddings ya lo logra la
+  configuración por defecto — que pasa a **superar a UMAP de forma estable**
+  (0.803 vs. 0.786). El eje que en el experimento anterior parecía irresoluble
+  (la inestabilidad de EmbedKit self-sup) se resuelve **mejorando la
+  representación de entrada**, no los hiperparámetros.
+- **Matiz:** a dimensión baja (2D–3D) EmbedKit self-sup sigue colapsando fuera
+  de muestra (Sección 5), y el barrido por holdout único puede empeorar las
+  cosas. La mejora viene del binomio *representación rica + dimensión
+  suficiente*, no de cada pieza por separado.
 
-## 7. Cómo reproducir
+## 8. Cómo reproducir
 
 ```bash
 cd experiments
@@ -215,11 +295,17 @@ python fashion_mnist_embeddings_preentrenadas.py --modelo efficientnet_b0
 # Sólo extraer y cachear los embeddings (paso 1, opcional):
 python extraer_embeddings_preentrenados.py --n 3000 --modelo mobilenet_v2 \
     --img-size 224 --out .cache_embeddings/emb_mobilenet_v2_n3000_s0_img224.npz
+
+# Barrido de HP de EmbedKit sobre los embeddings (Sección 6):
+python embedkit_unsup_sweep_embeddings.py            # completo (~45 min)
+python embedkit_unsup_sweep_embeddings.py --quick    # reducido para pruebas
 ```
 
-Salidas en `resultados_fashion_mnist_embeddings/`: `tabla_metricas_2d.csv`,
-`generalizacion_oos.csv`, `config.json` y las figuras
+Salidas del experimento principal en `resultados_fashion_mnist_embeddings/`:
+`tabla_metricas_2d.csv`, `generalizacion_oos.csv`, `config.json` y las figuras
 `fig_embeddings_2d.png`, `fig_metricas_barras.png`, `fig_generalizacion.png`.
+Salidas del barrido en `resultados_sweep_embeddings/`: `etapa*.csv`,
+`finalistas.csv`, `resumen.json`, `fig_finalistas.png`.
 Los embeddings se cachean en `.cache_embeddings/` (ignorado por git) para no
 recalcularlos entre corridas.
 

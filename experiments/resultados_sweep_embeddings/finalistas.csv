@@ -1,0 +1,4 @@
+,OOS acc media,OOS acc std,OOS trust media,config
+EmbedKit default,0.8025555555555555,0.014566153902323457,0.9741529132211767,dim=16 | aug=KNNPairs(k=5) | loss=Combined(NTXent.07 + AU.5) | h=256 L=2 | lr=0.0003 ep=150
+EmbedKit sweep-best,0.6186666666666666,0.2636406083485061,0.8435247409942023,dim=16 | aug=KNNPairs(k=10) | loss=NTXent(.07) | h=256 L=2 | lr=0.0003 ep=150
+UMAP (dim=16),0.7856666666666668,0.016384274303259352,0.9578910940024713,UMAP n_components=16

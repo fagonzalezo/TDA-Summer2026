@@ -1,0 +1,37 @@
+{
+  "config_ganadora": "dim=16 | aug=KNNPairs(k=10) | loss=NTXent(.07) | h=256 L=2 | lr=0.0003 ep=150",
+  "best_dim": 16,
+  "veredicto": "La mejor config no supervisada de EmbedKit (EmbedKit default) logra OOS kNN acc = 0.803 vs UMAP = 0.786 (dim=16). EmbedKit SUPERA a UMAP.",
+  "finalistas": {
+    "EmbedKit default": {
+      "OOS acc media": 0.8025555555555555,
+      "OOS acc std": 0.014566153902323457,
+      "OOS trust media": 0.9741529132211767,
+      "config": "dim=16 | aug=KNNPairs(k=5) | loss=Combined(NTXent.07 + AU.5) | h=256 L=2 | lr=0.0003 ep=150"
+    },
+    "EmbedKit sweep-best": {
+      "OOS acc media": 0.6186666666666666,
+      "OOS acc std": 0.2636406083485061,
+      "OOS trust media": 0.8435247409942023,
+      "config": "dim=16 | aug=KNNPairs(k=10) | loss=NTXent(.07) | h=256 L=2 | lr=0.0003 ep=150"
+    },
+    "UMAP (dim=16)": {
+      "OOS acc media": 0.7856666666666668,
+      "OOS acc std": 0.016384274303259352,
+      "OOS trust media": 0.9578910940024713,
+      "config": "UMAP n_components=16"
+    }
+  },
+  "args": {
+    "n": 3000,
+    "seed": 0,
+    "k": 10,
+    "epochs": 150,
+    "modelo": "mobilenet_v2",
+    "img_size": 224,
+    "data_dir": ".data",
+    "cache_dir": ".cache_embeddings",
+    "outdir": "resultados_sweep_embeddings",
+    "quick": false
+  }
+}
