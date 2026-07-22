@@ -1,0 +1,8 @@
+numpy
+scipy
+pandas
+matplotlib
+scikit-learn
+umap-learn
+torch
+git+https://github.com/fagonzalezo/embedding-kit
