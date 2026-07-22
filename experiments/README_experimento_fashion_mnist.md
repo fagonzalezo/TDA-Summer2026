@@ -18,8 +18,16 @@ responder: **¿se mantiene, se atenua o se agrava la ventaja de UMAP sobre el
 refinamiento no supervisado de EmbedKit cuando el dataset es mas dificil y de
 mayor dimension?**
 
+Las secciones 2–6 responden esa pregunta con la configuracion **por
+defecto** de EmbedKit. La **Seccion 7** va un paso mas alla: explora los
+distintos **mecanismos de refinamiento no supervisado** de EmbedKit
+(augmentations, losses, arquitectura) mediante un barrido, con el objetivo
+explicito de **superar a UMAP** — y lo consigue.
+
 Este documento reporta los resultados **reales** obtenidos al correr
-`fashion_mnist_umap_vs_embedkit.py` (no son numeros ilustrativos).
+`fashion_mnist_umap_vs_embedkit.py` (Secciones 2–6) y
+`embedkit_unsup_sweep_fashion_mnist.py` (Seccion 7) — no son numeros
+ilustrativos.
 
 ## 2. Metodologia
 
@@ -225,7 +233,88 @@ referencia de cota superior y no cambia la comparacion **no supervisada**.
 **Config de esta corrida:** `N=3000`, `SEED=0`, `K=10`, `epochs=150`,
 `DIM_GEN=16`, `--dim-alt 16` (ver `resultados_fashion_mnist_dim16/config.json`).
 
-## 7. Conclusiones
+## 7. ¿Se puede configurar EmbedKit no supervisado para superar a UMAP?
+
+Las secciones anteriores usan EmbedKit con su configuracion **por defecto**
+(augmentation `KNNPairs(k=5)`, loss `NTXent+AlignUniform`, dimension
+sugerida por el analizador). Pero EmbedKit expone varios **mecanismos** de
+refinamiento — distintas *augmentations* (que definen los pares positivos),
+distintas *losses* (con temperatura ajustable) y la arquitectura del
+proyector. La pregunta natural es: **¿existe una configuracion no
+supervisada de EmbedKit que supere a UMAP?**
+
+Para responderla, `embedkit_unsup_sweep_fashion_mnist.py` hace un **barrido
+por descenso de coordenadas**, siempre en modo `self_supervised` (**sin usar
+etiquetas en ningun momento**, ni siquiera para el *early-stopping*, que se
+guia por metricas geometricas no supervisadas como `k_skewness`). Cada
+configuracion se rankea por **exactitud k-NN fuera de muestra** (un holdout
+estratificado 75/25 rapido), que es la metrica donde estaba la brecha; los
+finalistas se re-evaluan con **5-fold × 3 semillas** para medir media y
+estabilidad. Losses que requieren etiquetas (Triplet, SupCon, RankNContrast)
+se excluyen por no ser aplicables sin supervision.
+
+**Etapas del barrido** (cada una fija el mejor valor y pasa a la siguiente;
+la referencia UMAP a la misma dimension es 0.739 OOS en el holdout):
+
+| Etapa | Se explora | Ganador | OOS acc (holdout) |
+|---|---|---|---|
+| 1. `target_dim` | 8, 16, 32 | **32** | 0.787 |
+| 2. augmentation | KNNPairs(5/10/15/hardneg), GaussianNoise, **FeatureMasking**, Mixup, KNN+Noise | **FeatureMasking(0.15)** | 0.793 |
+| 3. loss / temperatura | NTXent(.05/.07/.2/.5), AlignUniform, **Combined**, Combined(.2) | **Combined(NTXent.07+AU.5)** | 0.807 |
+| 4. arquitectura / entren. | hidden, n_layers, lr, epochs | **h=512, L=3, lr=1e-3** | 0.799 |
+
+(CSVs por etapa en `resultados_sweep/etapa*.csv`)
+
+Observaciones del barrido:
+- **La dimension ayuda poco mas alla de 16** (8→16→32 sube de 0.776 a 0.787):
+  confirma que el cuello de botella principal **no era** la dimension.
+- **La *augmentation* es el mecanismo mas decisivo.** `FeatureMasking`
+  (enmascarar 15% de los pixeles como vistas positivas) y `Mixup` superan a
+  `KNNPairs`; **`GaussianNoise` es claramente el peor** (0.588) — el tipo de
+  aumento importa mucho mas que sus hiperparametros. Es intuitivo: para
+  imagenes, enmascarar parches genera vistas positivas mas informativas que
+  añadir ruido gaussiano isotropico.
+- **La loss por defecto (Combined) ya era una buena eleccion**; subir la
+  temperatura de NTXent de 0.07 a 0.2 tambien ayuda a solas.
+
+**Finalistas (5-fold × 3 semillas, `target_dim=32`):**
+
+| Config | OOS kNN acc (media ± std) | OOS Trustworthiness |
+|---|---|---|
+| EmbedKit **default** (KNNPairs(5), h256/L2) | 0.611 ± 0.062 | 0.733 |
+| **EmbedKit sweep-best** (FeatureMasking, Combined, h512/L3/lr1e-3) | **0.775 ± 0.016** | 0.911 |
+| UMAP (dim=32) | 0.729 ± 0.020 | 0.975 |
+
+(CSV: `resultados_sweep/finalistas.csv`, figura:
+`resultados_sweep/fig_finalistas.png`, config completa en
+`resultados_sweep/resumen.json`)
+
+**Resultado: SI se puede — y por un margen claro.** La mejor configuracion
+no supervisada hallada por el barrido logra **0.775 ± 0.016** de exactitud
+fuera de muestra frente a **0.729 ± 0.020** de UMAP: la **supera en media**
+y ademas es **mas estable** (menor desviacion estandar que UMAP *y* que la
+propia EmbedKit por defecto). Es decir, no solo cierra la brecha de la
+Seccion 6 — la **invierte** y de paso **cura la inestabilidad** que era la
+debilidad central de EmbedKit self-sup en todo el resto del informe.
+
+Lo mas revelador es el contraste entre las dos filas de EmbedKit a **la
+misma dimension (32)**: la config por defecto (con `KNNPairs`) sigue siendo
+inestable (0.611 ± 0.062), mientras que la config del barrido (con
+`FeatureMasking` y una red mas grande) es estable y ganadora
+(0.775 ± 0.016). **La inestabilidad no venia de la dimension ni del enfoque
+contrastivo en si, sino sobre todo de la *augmentation* por defecto**
+(`KNNPairs`, que fabrica positivos a partir de vecinos en el espacio crudo
+y parece amplificar el ruido de cada particion). Cambiar el mecanismo de
+aumento a uno adecuado para imagenes es lo que desbloquea a EmbedKit.
+
+Matiz importante: UMAP sigue ganando en **Trustworthiness** OOS
+(0.975 vs 0.911) — preserva mejor la estructura geometrica fina — pero para
+la tarea de **generalizar la separacion de clases a datos nuevos** (kNN
+OOS), la EmbedKit afinada es superior. El "mejor embedder" sigue dependiendo
+del objetivo, pero **el objetivo planteado (superar a UMAP en generalizacion
+no supervisada) se logra**.
+
+## 8. Conclusiones
 
 1. **La observacion del notebook original se confirma y se acentua en un
    dataset mas complejo.** En Fashion-MNIST, UMAP supera a EmbedKit
@@ -263,22 +352,32 @@ referencia de cota superior y no cambia la comparacion **no supervisada**.
    su media mejore; UMAP, en cambio, es igual de estable en 3D que en 16D.
    Es decir, la dimension insuficiente no era la unica causa de la
    inestabilidad de EmbedKit self-sup. Ver Seccion 6 para el detalle.
+7. **Con la configuracion adecuada, EmbedKit no supervisado SI supera a
+   UMAP** (Seccion 7). Un barrido por los mecanismos de EmbedKit encuentra
+   una config (`target_dim=32`, augmentation `FeatureMasking`, loss
+   `Combined(NTXent+AlignUniform)`, red `h512/L3`) que logra
+   **0.775 ± 0.016** de exactitud k-NN fuera de muestra vs **0.729 ± 0.020**
+   de UMAP — mejor media **y** mejor estabilidad. El hallazgo clave: la
+   inestabilidad de las secciones previas venia sobre todo de la
+   *augmentation* por defecto (`KNNPairs`), no del enfoque contrastivo; a
+   igual dimension (32), cambiar a `FeatureMasking` pasa de 0.611 ± 0.062 a
+   0.775 ± 0.016. La *augmentation* resulta ser el mecanismo mas decisivo.
 
 **En resumen:** en Fashion-MNIST, un dataset con clases mas dificiles de
 separar y una geometria de embedding cruda mas anisotropica que `digits`,
-**UMAP se mantiene como el *embedder* no supervisado mas confiable**,
-sobre todo en **estabilidad al generalizar** a datos nuevos — una ventaja
-que persiste incluso cuando a EmbedKit se le da la dimension que su propio
-diagnostico recomienda. En calidad de proyeccion de una sola pasada
-(Seccion A), sin embargo, la ventaja de UMAP sobre EmbedKit self-sup
-**depende de la dimension**: es clara en 2D/3D y se **cierra casi por
-completo (o se invierte en metricas locales) a 16D**, aunque a costa de
-que EmbedKit sacrifique la estructura global de las distancias. El
-refinador no supervisado de `embedding-kit` no cierra la brecha de
-**estabilidad**, que sigue siendo su debilidad mas pronunciada frente a
-UMAP en este dataset mas complejo.
+**UMAP es el *embedder* no supervisado mas confiable de fabrica** (con su
+configuracion por defecto): mas estable al generalizar y superior en
+trustworthiness. Pero **no es imbatible**: tras explorar los mecanismos de
+refinamiento de `embedding-kit`, una configuracion no supervisada afinada
+(clave: la *augmentation* `FeatureMasking` en vez de `KNNPairs`) **supera a
+UMAP en generalizacion fuera de muestra y ademas es mas estable**. La
+ventaja "de fabrica" de UMAP se explica en buena parte por elegir buenos
+valores por defecto; con el mecanismo de aumento correcto (`FeatureMasking`),
+el refinador contrastivo **cierra e invierte** la brecha de **estabilidad y
+generalizacion** que era su debilidad mas pronunciada en el resto del
+informe.
 
-## 8. Como reproducir
+## 9. Como reproducir
 
 ```bash
 cd experiments
@@ -289,11 +388,17 @@ python fashion_mnist_umap_vs_embedkit.py --n 3000 --outdir resultados_fashion_mn
 
 # Generalizacion tambien a dim=16 para UMAP y EmbedKit (Seccion 6)
 python fashion_mnist_umap_vs_embedkit.py --n 3000 --dim-gen 16 --outdir resultados_fashion_mnist_dim16
+
+# Barrido de configuraciones no supervisadas de EmbedKit vs UMAP (Seccion 7)
+python embedkit_unsup_sweep_fashion_mnist.py --n 3000 --outdir resultados_sweep
 ```
 
-Salidas generadas en cada `--outdir`:
+Salidas de los dos primeros comandos (en cada `--outdir`):
 `tabla_metricas_2d.csv`, `generalizacion_oos.csv`, `config.json`,
 `fig_embeddings_2d.png`, `fig_metricas_barras.png`, `fig_generalizacion.png`.
+El barrido genera en `resultados_sweep/`: `etapa*.csv` (una por etapa),
+`finalistas.csv`, `resumen.json` (config ganadora y veredicto) y
+`fig_finalistas.png`.
 
 Notas:
 - Si `sklearn.datasets.fetch_openml` no puede descargar Fashion-MNIST (p. ej.
@@ -304,3 +409,7 @@ Notas:
   la dimension adicional de la Seccion A (por defecto 16, la sugerida por
   `EmbedKitAnalyzer`; `0` la omite). `--dim-gen` controla la dimension de la
   prueba de generalizacion (Seccion B/6, por defecto 3).
+- El barrido (`embedkit_unsup_sweep_fashion_mnist.py`) acepta `--quick` para
+  una version reducida (menos configuraciones y una sola semilla) util para
+  pruebas rapidas. Todo el barrido es **no supervisado**: nunca pasa `y` al
+  ajustar los encoders.

@@ -1,0 +1,33 @@
+{
+  "config_ganadora": "dim=32 | aug=FeatureMasking(.15) | loss=Combined(NTX.07+AU.5) | h=512 L=3 | lr=0.001 ep=150",
+  "best_dim": 32,
+  "veredicto": "La mejor config no supervisada de EmbedKit (EmbedKit sweep-best) logra OOS kNN acc = 0.775 vs UMAP = 0.729 (dim=32). EmbedKit SUPERA a UMAP.",
+  "finalistas": {
+    "EmbedKit default": {
+      "OOS acc media": 0.6114444444444445,
+      "OOS acc std": 0.06178776897624423,
+      "OOS trust media": 0.7331232012166145,
+      "config": "dim=32 | aug=KNNPairs(k=5) | loss=Combined(NTXent.07 + AU.5) | h=256 L=2 | lr=0.0003 ep=150"
+    },
+    "EmbedKit sweep-best": {
+      "OOS acc media": 0.7754444444444445,
+      "OOS acc std": 0.016060841113838053,
+      "OOS trust media": 0.9111027658967779,
+      "config": "dim=32 | aug=FeatureMasking(.15) | loss=Combined(NTX.07+AU.5) | h=512 L=3 | lr=0.001 ep=150"
+    },
+    "UMAP (dim=32)": {
+      "OOS acc media": 0.7289999999999999,
+      "OOS acc std": 0.019633682320988114,
+      "OOS trust media": 0.9753406900484745,
+      "config": "UMAP n_components=32"
+    }
+  },
+  "args": {
+    "n": 3000,
+    "seed": 0,
+    "k": 10,
+    "epochs": 150,
+    "outdir": "resultados_sweep",
+    "quick": false
+  }
+}
