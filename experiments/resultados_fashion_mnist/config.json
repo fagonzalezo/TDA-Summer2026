@@ -1,0 +1,12 @@
+{
+  "n": 3000,
+  "seed": 0,
+  "k": 10,
+  "epochs": 150,
+  "dim_gen": 3,
+  "outdir": "resultados_fashion_mnist",
+  "con_tsne": false,
+  "sin_supervisado": false,
+  "hay_umap": true,
+  "hay_embedkit": true
+}
