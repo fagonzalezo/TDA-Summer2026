@@ -123,7 +123,7 @@ def evaluar(X_alto, X_bajo, y, k):
 # 3. Seccion A: embeddings y tabla comparativa
 # ---------------------------------------------------------------------------
 
-def correr_seccion_a(X, y, k, epochs, con_tsne, con_supervisado, seed):
+def correr_seccion_a(X, y, k, epochs, con_tsne, con_supervisado, seed, dim_alt=None):
     filas = {}
     embeddings = {}
 
@@ -174,6 +174,44 @@ def correr_seccion_a(X, y, k, epochs, con_tsne, con_supervisado, seed):
         filas[nombre] = metricas
         embeddings[nombre] = X_ref
         print(f"{nombre}: refinado a R^{dim}; {dt:.1f} s")
+
+    # Pasada adicional a la dimension sugerida por EmbedKitAnalyzer (suggested_target_dim),
+    # para dar a UMAP y a EmbedKit la misma dimension "comoda" segun el diagnostico.
+    # No se guarda en `embeddings` (no tiene sentido graficar 2 ejes arbitrarios de un
+    # espacio de 16D), solo entra a la tabla de metricas.
+    if dim_alt and dim_alt not in (2, 3):
+        t0 = time.time()
+        X_pca_alt = PCA(n_components=dim_alt, random_state=seed).fit_transform(X)
+        dt = time.time() - t0
+        metricas = evaluar(X, X_pca_alt, y, k)
+        metricas["Tiempo (s)"] = dt
+        filas[f"PCA ({dim_alt}D)"] = metricas
+        print(f"PCA ({dim_alt}D): {dt:.1f} s")
+
+        if HAY_UMAP:
+            t0 = time.time()
+            X_umap_alt = umap.UMAP(
+                n_components=dim_alt, n_neighbors=k, random_state=seed
+            ).fit_transform(X)
+            dt = time.time() - t0
+            metricas = evaluar(X, X_umap_alt, y, k)
+            metricas["Tiempo (s)"] = dt
+            filas[f"UMAP ({dim_alt}D)"] = metricas
+            print(f"UMAP ({dim_alt}D): {dt:.1f} s")
+
+        if HAY_EMBEDKIT:
+            X_ref, dt = refinar("self_supervised", dim_alt)
+            metricas = evaluar(X, X_ref, y, k)
+            metricas["Tiempo (s)"] = dt
+            filas[f"EmbedKit self-sup ({dim_alt}D)"] = metricas
+            print(f"EmbedKit self-sup ({dim_alt}D): refinado a R^{dim_alt}; {dt:.1f} s")
+
+            if con_supervisado:
+                X_ref, dt = refinar("supervised", dim_alt, y)
+                metricas = evaluar(X, X_ref, y, k)
+                metricas["Tiempo (s)"] = dt
+                filas[f"EmbedKit superv. ({dim_alt}D)"] = metricas
+                print(f"EmbedKit superv. ({dim_alt}D): refinado a R^{dim_alt}; {dt:.1f} s")
 
     return pd.DataFrame(filas).T, embeddings
 
@@ -318,6 +356,11 @@ def main():
     ap.add_argument("--k", type=int, default=10, help="numero de vecinos comun")
     ap.add_argument("--epochs", type=int, default=150, help="epocas de entrenamiento de EmbedKit")
     ap.add_argument("--dim-gen", type=int, default=3, help="dimension para la prueba de generalizacion")
+    ap.add_argument(
+        "--dim-alt", type=int, default=16,
+        help="dimension adicional para PCA/UMAP/EmbedKit en la Seccion A "
+        "(por defecto 16, la sugerida por EmbedKitAnalyzer); 0 para omitirla",
+    )
     ap.add_argument("--outdir", type=str, default="resultados_fashion_mnist")
     ap.add_argument("--con-tsne", action="store_true", help="incluir t-SNE (mas lento)")
     ap.add_argument(
@@ -347,7 +390,8 @@ def main():
 
     print("\n--- Seccion A: embeddings 2D/3D y metricas ---")
     tabla_a, embeddings = correr_seccion_a(
-        X, y, args.k, args.epochs, args.con_tsne, con_supervisado, args.seed
+        X, y, args.k, args.epochs, args.con_tsne, con_supervisado, args.seed,
+        dim_alt=args.dim_alt or None,
     )
     print(tabla_a)
     tabla_a.to_csv(outdir / "tabla_metricas_2d.csv")
