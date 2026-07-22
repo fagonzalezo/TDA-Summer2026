@@ -5,4 +5,8 @@ matplotlib
 scikit-learn
 umap-learn
 torch
+# Extractor de embeddings preentrenados (paso 1 del experimento de embeddings):
+# tf.keras.applications con pesos de ImageNet. Se usa en un proceso aparte para
+# no chocar con PyTorch. `tensorflow-cpu` sirve igual si no hay GPU.
+tensorflow
 git+https://github.com/fagonzalezo/embedding-kit

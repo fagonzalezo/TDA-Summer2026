@@ -1,0 +1,19 @@
+{
+  "n": 3000,
+  "seed": 0,
+  "k": 10,
+  "epochs": 150,
+  "dim_gen": 3,
+  "dim_alt": 16,
+  "modelo": "mobilenet_v2",
+  "img_size": 224,
+  "data_dir": ".data",
+  "cache_dir": ".cache_embeddings",
+  "outdir": "resultados_fashion_mnist_embeddings",
+  "con_tsne": false,
+  "sin_supervisado": false,
+  "hay_umap": true,
+  "hay_embedkit": true,
+  "dim_embedding": 1280,
+  "entrada_modelos": "embeddings preentrenados mobilenet_v2 (ImageNet)"
+}
