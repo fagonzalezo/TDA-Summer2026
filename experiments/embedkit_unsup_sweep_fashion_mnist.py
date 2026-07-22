@@ -37,6 +37,7 @@ Uso:
 
 import argparse
 import json
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -48,6 +49,12 @@ from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.neighbors import KNeighborsClassifier
 
 warnings.filterwarnings("ignore")
+
+# Algunas versiones de umap-learn importan TensorFlow de forma ansiosa si esta
+# instalado, y TF + PyTorch (embedding-kit) en el mismo interprete provocan un
+# Segmentation fault. Bloqueamos `tensorflow` antes de importar umap; umap
+# detecta el ImportError y sigue con su UMAP normal. (Este barrido nunca usa TF.)
+sys.modules.setdefault("tensorflow", None)
 
 import umap
 from embedkit import EmbedKit
@@ -252,6 +259,17 @@ def main():
     X_full, y_full = cargar_fashion_mnist()
     X, y = submuestra_estratificada(X_full, y_full, args.n, seed)
 
+    correr_sweep(X, y, args, outdir)
+
+
+def correr_sweep(X, y, args, outdir):
+    """Corre el barrido completo (etapas 1-5) sobre una representacion X dada.
+
+    Se separo de main() para poder reutilizar exactamente el mismo barrido con
+    otra entrada (p. ej. embeddings preentrenados) sin duplicar codigo: solo
+    cambia la representacion X; toda la logica del sweep es identica.
+    """
+    k, seed, ep = args.k, args.seed, args.epochs
     stage_tables = {}
 
     # ---- Etapa 1: target_dim ----
