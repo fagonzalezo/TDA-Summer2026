@@ -53,7 +53,7 @@ Ambas familias degeneran en los mismos extremos: $k=1$ (o $\varepsilon\to 0^+$) 
 
 Si $X\sim f$ i.i.d. en $\mathbb{R}^d$, el estimador de densidad por $k$-vecinos da
 
-$$k \approx n\, f(x)\, V_d\, r_k(x)^d \quad\Longrightarrow\quad r_k(x) \approx \left(\frac{k}{n\,f(x)\,V_d}\right)^{1/d},$$
+$$k \approx n \cdot f(x) \cdot V_d \cdot r_k(x)^d \quad\Longrightarrow\quad r_k(x) \approx \left(\frac{k}{n \cdot f(x) \cdot V_d}\right)^{1/d},$$
 
 donde $V_d$ es el volumen de la bola unitaria. Es decir, $r_k(x)$ **se encoge donde los datos son densos y crece donde son dispersos**, compensando automáticamente las variaciones de densidad — exactamente el comportamiento observado con las dos lunas: un $\varepsilon$ fijo, o bien une las lunas por un punto de ruido, o bien fragmenta las zonas más dispersas, mientras que $r_k(x)$ se reescala localmente.
 
